@@ -15,31 +15,31 @@
 package plan
 
 import (
+	"reflect"
 	"regexp"
-	"github.com/micro/go-log"
-	"github.com/opensds/multi-cloud/dataflow/pkg/db"
+	"time"
+
 	"github.com/globalsign/mgo"
-	. "github.com/opensds/multi-cloud/dataflow/pkg/type"
 	"github.com/globalsign/mgo/bson"
+	"github.com/micro/go-log"
+	c "github.com/opensds/multi-cloud/api/pkg/Filters/context"
+	"github.com/opensds/multi-cloud/dataflow/pkg/db"
+	. "github.com/opensds/multi-cloud/dataflow/pkg/model"
+	"github.com/opensds/multi-cloud/dataflow/pkg/scheduler/trigger"
 	"github.com/opensds/multi-cloud/datamover/proto"
 	"golang.org/x/net/context"
-	"time"
-	"reflect"
-	"github.com/opensds/multi-cloud/dataflow/pkg/type"
-	"github.com/opensds/multi-cloud/dataflow/pkg/scheduler/trigger"
 )
 
 var dataBaseName = "test"
 var tblConnector = "connector"
 var tblPolicy = "policy"
 
-
 func isEqual(src *Connector, dest *Connector) bool {
 	switch src.StorType {
 	case STOR_TYPE_OPENSDS:
 		if dest.StorType == STOR_TYPE_OPENSDS && src.BucketName == dest.BucketName {
 			return true
-		}else {
+		} else {
 			return false
 		}
 	default: //TODO: check according to StorType later.
@@ -47,10 +47,10 @@ func isEqual(src *Connector, dest *Connector) bool {
 	}
 }
 
-func Create(plan *Plan, datamover datamover.DatamoverService) error {
+func Create(ctx *c.Context, plan *Plan, datamover datamover.DatamoverService) error {
 	//Check parameter validity
 	m, err := regexp.MatchString("[[:alnum:]-_.]+", plan.Name)
-	if !m || plan.Name == "all"{
+	if !m || plan.Name == "all" {
 		log.Logf("Invalid plan name[%s], err:%v", plan.Name, err)
 		return ERR_INVALID_PLAN_NAME
 	}
@@ -66,20 +66,20 @@ func Create(plan *Plan, datamover datamover.DatamoverService) error {
 	if plan.PolicyId != "" {
 		if bson.IsObjectIdHex(plan.PolicyId) {
 			plan.PolicyRef = mgo.DBRef{tblPolicy, bson.ObjectIdHex(plan.PolicyId), dataBaseName}
-		}else {
+		} else {
 			log.Logf("Invalid policy:%s\n", plan.PolicyId)
 			return ERR_POLICY_NOT_EXIST
 		}
 	}
 
 	//Add to database
-	if err := db.DbAdapter.CreatePlan(plan); err != nil {
+	if err := db.DbAdapter.CreatePlan(ctx, plan); err != nil {
 		log.Logf("create plan(%s) in db failed,%v", err)
 		return err
 	}
 
 	if plan.PolicyId != "" {
-		if err := trigger.GetTriggerMgr().Add(plan, NewPlanExecutor(datamover, plan)); err != nil {
+		if err := trigger.GetTriggerMgr().Add(ctx, plan, NewPlanExecutor(ctx, datamover, plan)); err != nil {
 			log.Logf("Add plan(%s) to trigger failed, %v", plan.Id.Hex(), err)
 			return err
 		}
@@ -88,37 +88,36 @@ func Create(plan *Plan, datamover datamover.DatamoverService) error {
 	return nil
 }
 
-func Delete(id string, tenant string) error {
-	plan,err := db.DbAdapter.GetPlanByid(id, tenant)
-	if err != nil && err != ERR_PLAN_NOT_EXIST  {
+func Delete(ctx *c.Context, id string) error {
+	plan, err := db.DbAdapter.GetPlan(ctx, id)
+	if err != nil && err != ERR_PLAN_NOT_EXIST {
 		log.Logf("Delete plan failed, %v", err)
 		return err
 	}
 
-	if plan.PolicyId !=  "" {
-		err = trigger.GetTriggerMgr().Remove(plan)
-		if err != nil && err != ERR_PLAN_NOT_EXIST{
+	if plan.PolicyId != "" {
+		err = trigger.GetTriggerMgr().Remove(ctx, plan)
+		if err != nil && err != ERR_PLAN_NOT_EXIST {
 			log.Logf("Remove plan from triggers failed, %v", err)
 			return err
 		}
 	}
 
-	return db.DbAdapter.DeletePlan(id, tenant)
+	return db.DbAdapter.DeletePlan(ctx, id)
 }
 
-
 //1. cannot update type
-func Update(plan *Plan, datamover datamover.DatamoverService) error {
+func Update(ctx *c.Context, plan *Plan, datamover datamover.DatamoverService) error {
 	if plan.Name != "" {
 		m, err := regexp.MatchString("[[:alnum:]-_.]+", plan.Name)
-		if !m || plan.Name == "all"{
-			log.Logf("Invalid plan name[%s],err:", plan.Name,err) //cannot use all as name
+		if !m || plan.Name == "all" {
+			log.Logf("Invalid plan name[%s],err:", plan.Name, err) //cannot use all as name
 			return ERR_INVALID_PLAN_NAME
 		}
 	}
 
 	//TOkkDO check validation of tenant
-	curPlan, err := db.DbAdapter.GetPlanByid(plan.Id.Hex(), plan.Tenant)
+	curPlan, err := db.DbAdapter.GetPlan(ctx, plan.Id.Hex())
 	if err != nil {
 		log.Logf("Update plan failed, err: connot get the plan(%v).\n", err.Error())
 		return err
@@ -143,46 +142,44 @@ func Update(plan *Plan, datamover datamover.DatamoverService) error {
 
 	if plan.PolicyId != "" {
 		if bson.IsObjectIdHex(plan.PolicyId) {
-			trigger.GetTriggerMgr().Remove(plan)
+			trigger.GetTriggerMgr().Remove(ctx, plan)
 			plan.PolicyRef = mgo.DBRef{tblPolicy, plan.PolicyId, dataBaseName}
-			trigger.GetTriggerMgr().Add(plan, NewPlanExecutor(datamover, plan))
-		}else {
+			trigger.GetTriggerMgr().Add(ctx, plan, NewPlanExecutor(ctx, datamover, plan))
+		} else {
 			log.Logf("Invalid policy:%s\n", plan.PolicyId)
 			return ERR_POLICY_NOT_EXIST
 		}
-	}else if curPlan.PolicyId != ""{
+	} else if curPlan.PolicyId != "" {
 		plan.PolicyId = curPlan.PolicyId
 		plan.PolicyRef = curPlan.PolicyRef
 	}
 	if plan.PolicyId != plan.PolicyId {
 
 	}
-	return db.DbAdapter.UpdatePlan(plan)
+	return db.DbAdapter.UpdatePlan(ctx, plan)
 }
 
-func Get(name string, tenant string) ([]Plan, error) {
-	m, err := regexp.MatchString("[[:alnum:]-_.]*", name)
-	if !m {
-		log.Logf("Invalid plan name[%s],err:%v]n", name,err)
-		return nil,ERR_INVALID_PLAN_NAME
-	}
-
-	return db.DbAdapter.GetPlan(name, tenant)
+func Get(ctx *c.Context, id string) (*Plan, error) {
+	return db.DbAdapter.GetPlan(ctx, id)
 }
 
-func getLocation(conn *Connector) (string, error){
+func List(ctx *c.Context) ([]Plan, error) {
+	return db.DbAdapter.ListPlan(ctx)
+}
+
+func getLocation(conn *Connector) (string, error) {
 	switch conn.StorType {
 	case STOR_TYPE_OPENSDS:
-		return conn.BucketName,nil
+		return conn.BucketName, nil
 	default:
 		log.Logf("Unsupport cnnector type:%v, return ERR_INNER_ERR\n", conn.StorType)
-		return "",ERR_INNER_ERR
+		return "", ERR_INNER_ERR
 	}
 }
 
-func sendJob(req *datamover.RunJobRequest, mclient datamover.DatamoverService) error{
+func sendJob(req *datamover.RunJobRequest, mclient datamover.DatamoverService) error {
 	ch := make(chan int)
-	go func (req *datamover.RunJobRequest){
+	go func(req *datamover.RunJobRequest) {
 		//TODO: call mclient.Runjob directly is a temporary way, need to use sending message to kafka replace it.
 		ctx := context.Background()
 		_, ok := ctx.Deadline()
@@ -193,7 +190,7 @@ func sendJob(req *datamover.RunJobRequest, mclient datamover.DatamoverService) e
 		if err != nil {
 			log.Logf("Run job failed, err:%v\n", err)
 			ch <- 1
-		}else {
+		} else {
 			log.Log("Run job succeed.")
 			ch <- 0
 		}
@@ -201,29 +198,29 @@ func sendJob(req *datamover.RunJobRequest, mclient datamover.DatamoverService) e
 
 	select {
 	case n := <-ch:
-		log.Logf("Run job end, n=%d\n",n)
-	case <- time.After(86400*time.Second):
+		log.Logf("Run job end, n=%d\n", n)
+	case <-time.After(86400 * time.Second):
 		log.Log("Wait job timeout.")
 	}
 
 	return nil
 }
 
-func buildConn(reqConn *datamover.Connector, conn *_type.Connector) {
+func buildConn(reqConn *datamover.Connector, conn *Connector) {
 	if conn.StorType == STOR_TYPE_OPENSDS {
 		reqConn.BucketName = conn.BucketName
-	}else {
+	} else {
 		for i := 0; i < len(conn.ConnConfig); i++ {
-			reqConn.ConnConfig = append(reqConn.ConnConfig, &datamover.KV{Key:conn.ConnConfig[i].Key, Value:conn.ConnConfig[i].Value})
+			reqConn.ConnConfig = append(reqConn.ConnConfig, &datamover.KV{Key: conn.ConnConfig[i].Key, Value: conn.ConnConfig[i].Value})
 		}
 	}
 }
 
-func Run(id string, tenant string, mclient datamover.DatamoverService) (bson.ObjectId,error) {
+func Run(ctx *c.Context, id string, tenant string, mclient datamover.DatamoverService) (bson.ObjectId, error) {
 	//Get information from database
-	plan,err := db.DbAdapter.GetPlanByid(id, tenant)
+	plan, err := db.DbAdapter.GetPlan(ctx, id)
 	if err != nil {
-		return "",err
+		return "", err
 	}
 
 	//scheduling must be mutual excluded among several schedulers
@@ -234,8 +231,8 @@ func Run(id string, tenant string, mclient datamover.DatamoverService) (bson.Obj
 			//Make sure unlock before return
 			defer db.DbAdapter.UnlockSched(string(plan.Id.Hex()))
 			break
-		}else if ret == LockBusy{
-			return "",ERR_RUN_PLAN_BUSY
+		} else if ret == LockBusy {
+			return "", ERR_RUN_PLAN_BUSY
 		} else {
 			//Try to lock again, try three times at most
 			ret = db.DbAdapter.LockSched(string(plan.Id.Hex()))
@@ -243,15 +240,15 @@ func Run(id string, tenant string, mclient datamover.DatamoverService) (bson.Obj
 	}
 
 	//Get source location by source connector
-	srcLocation,err1 := getLocation(&plan.SourceConn)
+	srcLocation, err1 := getLocation(&plan.SourceConn)
 	if err1 != nil {
-		return "",err1
+		return "", err1
 	}
 
 	//Get destination location by destination connector
-	destLocation,err2 := getLocation(&plan.DestConn)
+	destLocation, err2 := getLocation(&plan.DestConn)
 	if err2 != nil {
-		return "",err2
+		return "", err2
 	}
 
 	ct := time.Now()
@@ -270,19 +267,19 @@ func Run(id string, tenant string, mclient datamover.DatamoverService) (bson.Obj
 	job.RemainSource = plan.RemainSource
 
 	//add job to database
-	errno := db.DbAdapter.CreateJob(&job)
+	errno := db.DbAdapter.CreateJob(ctx, &job)
 	if errno == nil {
 		//TODO: change to send job to datamover by kafka
 		//This way send job is the temporary
-		req := datamover.RunJobRequest{Id:plan.Id.Hex(), OverWrite:plan.OverWrite, RemainSource:plan.RemainSource}
-		srcConn := datamover.Connector{Type:plan.SourceConn.StorType}
+		req := datamover.RunJobRequest{Id: plan.Id.Hex(), OverWrite: plan.OverWrite, RemainSource: plan.RemainSource}
+		srcConn := datamover.Connector{Type: plan.SourceConn.StorType}
 		buildConn(&srcConn, &plan.SourceConn)
 		req.SourceConn = &srcConn
-		destConn := datamover.Connector{Type:plan.DestConn.StorType}
+		destConn := datamover.Connector{Type: plan.DestConn.StorType}
 		buildConn(&destConn, &plan.DestConn)
 		req.DestConn = &destConn
 		go sendJob(&req, mclient)
-	}else {
+	} else {
 		log.Logf("Add job[id=%s,plan=%s,source_location=%s,dest_location=%s] to database failed.\n", string(job.Id.Hex()),
 			job.PlanName, job.SourceLocation, job.DestLocation)
 	}
@@ -290,21 +287,23 @@ func Run(id string, tenant string, mclient datamover.DatamoverService) (bson.Obj
 	return job.Id, nil
 }
 
-
 type TriggerExecutor struct {
 	datamover datamover.DatamoverService
-	planId string
-	tenantId string
+	planId    string
+	tenantId  string
+	ctx       *c.Context
 }
 
-func NewPlanExecutor(datamover datamover.DatamoverService, plan *_type.Plan) trigger.Executer {
+func NewPlanExecutor(ctx *c.Context, datamover datamover.DatamoverService, plan *Plan) trigger.Executer {
 	return &TriggerExecutor{
-		datamover:datamover,
-		planId:plan.Id.Hex(),
-		tenantId:plan.Tenant}
+		datamover: datamover,
+		planId:    plan.Id.Hex(),
+		tenantId:  plan.Tenant,
+		ctx:       ctx,
+	}
 }
 
-func (p *TriggerExecutor) Run()  {
+func (p *TriggerExecutor) Run() {
 	log.Logf("Plan (%s) is called in dataflow service.", p.planId)
 	//tenant := "tenant"
 	//jobId, err := Run(p.planId, tenant, p.datamover)

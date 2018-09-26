@@ -2,14 +2,17 @@ syntax = "proto3";
 
 service DataFlow {
 	rpc GetPolicy(GetPolicyRequest) returns (GetPolicyResponse) {}
+	rpc ListPolicy(ListPolicyRequest) returns (ListPolicyResponse) {}
 	rpc CreatePolicy(CreatePolicyRequest) returns (CreatePolicyResponse) {}
 	rpc UpdatePolicy(UpdatePolicyRequest) returns (UpdatePolicyResponse) {}
 	rpc DeletePolicy(DeletePolicyRequest) returns (DeletePolicyResponse) {}
 	rpc GetPlan(GetPlanRequest) returns (GetPlanResponse) {}
+	rpc ListPlan(ListPlanRequest) returns (ListPlanResponse) {}
 	rpc CreatePlan(CreatePlanRequest) returns (CreatePlanResponse) {}
 	rpc UpdatePlan(UpdatePlanRequest) returns (UpdatePlanResponse) {}
 	rpc DeletePlan(DeletePlanRequest) returns (DeletePlanResponse) {}
 	rpc GetJob(GetJobRequest) returns (GetJobResponse) {}
+	rpc ListJob(ListJobRequest) returns (ListJobResponse) {}
 	rpc RunPlan(RunPlanRequest) returns (RunPlanResponse) {}
 }
 
@@ -29,17 +32,27 @@ message Policy {
 }
 
 message GetPolicyRequest {
-	string name = 1;
-	string tenant = 2;
+	string context = 1;
+	string id = 2;
 }
 
 message GetPolicyResponse {
 	string err = 1;
-	repeated Policy pols = 2;
+	Policy pol = 2;
+}
+
+message ListPolicyRequest {
+    string context = 1;
+}
+
+message ListPolicyResponse {
+    string err = 1;
+    repeated Policy pols = 2;
 }
 
 message CreatePolicyRequest {
-	Policy pol = 1;
+	string context = 1;
+	Policy pol = 2;
 }
 
 message CreatePolicyResponse {
@@ -48,7 +61,8 @@ message CreatePolicyResponse {
 }
 
 message UpdatePolicyRequest {
-	Policy pol = 1;
+	string context = 1;
+	Policy pol = 2;
 }
 
 message UpdatePolicyResponse {
@@ -57,7 +71,8 @@ message UpdatePolicyResponse {
 }
 
 message DeletePolicyRequest {
-	string id = 1;
+	string context = 1;
+	string id = 2;
 }
 
 message DeletePolicyResponse {
@@ -98,8 +113,8 @@ message Plan {
 }
 
 message CreatePlanRequest {
-	Plan plan = 1;
-	string tenant = 2;
+	string context = 1;
+	Plan plan = 2;
 }
 
 message CreatePlanResponse {
@@ -108,18 +123,27 @@ message CreatePlanResponse {
 }
 
 message GetPlanRequest {
-	string name = 1;
-	string tenant = 2;
+	string context = 1;
+	string id = 2;
 }
 
 message GetPlanResponse {
 	string err = 1;
-	repeated Plan plans = 2;
+	Plan plan = 2;
+}
+
+message ListPlanRequest {
+    string context = 1;
+}
+
+message ListPlanResponse {
+    string err = 1;
+    repeated Plan plans = 2;
 }
 
 message UpdatePlanRequest {
-	Plan plan = 1;
-	string tenant = 2;
+	string context = 1;
+	Plan plan = 2;
 }
 
 message UpdatePlanResponse {
@@ -128,8 +152,8 @@ message UpdatePlanResponse {
 }
 
 message DeletePlanRequest {
-	string id = 1;
-	string tenant = 2;
+	string context = 1;
+	string id = 2;
 }
 
 message DeletePlanResponse {
@@ -137,8 +161,8 @@ message DeletePlanResponse {
 }
 
 message RunPlanRequest {
-	string id = 1;
-	string tenant = 2;
+	string context = 1;
+	string id = 2;
 }
 
 message RunPlanResponse {
@@ -162,11 +186,20 @@ message Job {
 }
 
 message GetJobRequest {
-	string id = 1;
-	string tenant = 2;
+	string context = 1;
+	string id = 2;
 }
 
 message GetJobResponse {
 	string err = 1;
-	repeated Job jobs = 2;
+	Job job = 2;
+}
+
+message ListJobRequest {
+    string context = 1;
+}
+
+message ListJobResponse {
+    string err = 1;
+    repeated Job jobs = 2;
 }

@@ -19,11 +19,12 @@ import (
 	"regexp"
 
 	"github.com/micro/go-log"
+	"github.com/opensds/multi-cloud/api/pkg/Filters/context"
 	"github.com/opensds/multi-cloud/dataflow/pkg/db"
-	. "github.com/opensds/multi-cloud/dataflow/pkg/type"
+	. "github.com/opensds/multi-cloud/dataflow/pkg/model"
 )
 
-func Create(pol *Policy) error {
+func Create(ctx *context.Context, pol *Policy) error {
 	m, err := regexp.MatchString("[[:alnum:]-_.]+", pol.Name)
 	if !m || pol.Name == "all" {
 		log.Logf("Invalid policy name[%s], err:%v\n", pol.Name, err)
@@ -31,15 +32,15 @@ func Create(pol *Policy) error {
 	}
 
 	//TODO check validation of policy
-	return db.DbAdapter.CreatePolicy(pol)
+	return db.DbAdapter.CreatePolicy(ctx, pol)
 }
 
-func Delete(id string, tenantname string) error {
-	return db.DbAdapter.DeletePolicy(id, tenantname)
+func Delete(ctx *context.Context, id string) error {
+	return db.DbAdapter.DeletePolicy(ctx, id)
 }
 
 //When update policy, policy id must be provided
-func Update(pol *Policy) error {
+func Update(ctx *context.Context, pol *Policy) error {
 	if pol.Name != "" {
 		m, err := regexp.MatchString("[[:alnum:]-_.]+", pol.Name)
 		if !m || pol.Name == "all" {
@@ -48,7 +49,7 @@ func Update(pol *Policy) error {
 		}
 	}
 
-	curPol, err := db.DbAdapter.GetPolicyById(pol.Id.Hex(), pol.Tenant)
+	curPol, err := db.DbAdapter.GetPolicy(ctx, pol.Id.Hex())
 	if err != nil {
 		log.Logf("Update policy failed, err: connot get the policy(%v).\n", err.Error())
 		return err
@@ -67,20 +68,25 @@ func Update(pol *Policy) error {
 	//TODO check validation of policy
 
 	//update database
-	return db.DbAdapter.UpdatePolicy(curPol)
+	return db.DbAdapter.UpdatePolicy(ctx, curPol)
 }
 
-func Get(name string, tenant string) ([]Policy, error) {
-	m, err := regexp.MatchString("[[:alnum:]-_.]*", name)
+func Get(ctx *context.Context, id string) (*Policy, error) {
+	m, err := regexp.MatchString("[[:alnum:]-_.]*", id)
 	if !m {
-		log.Logf("Invalid policy name[%s],err:%v\n", name, err)
+		log.Logf("Invalid policy id[%s],err:%v\n", id, err)
 		return nil, ERR_INVALID_POLICY_NAME
 	}
 
-	pols, errcode := db.DbAdapter.GetPolicy(name, tenant)
-	if len(pols) == 0 {
-		log.Logf("Get nothing, policy name is %s, tenant is %s\n.", name, tenant)
+	return db.DbAdapter.GetPolicy(ctx, id)
+}
+
+func List(ctx *context.Context, id string) ([]Policy, error) {
+	m, err := regexp.MatchString("[[:alnum:]-_.]*", id)
+	if !m {
+		log.Logf("Invalid policy id[%s],err:%v\n", id, err)
+		return nil, ERR_INVALID_POLICY_NAME
 	}
 
-	return pols, errcode
+	return db.DbAdapter.ListPolicy(ctx)
 }

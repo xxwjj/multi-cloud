@@ -17,15 +17,16 @@ package job
 import (
 	"github.com/globalsign/mgo/bson"
 	"github.com/micro/go-log"
+	"github.com/opensds/multi-cloud/api/pkg/Filters/context"
 	"github.com/opensds/multi-cloud/dataflow/pkg/db"
-	. "github.com/opensds/multi-cloud/dataflow/pkg/type"
+	. "github.com/opensds/multi-cloud/dataflow/pkg/model"
 )
 
-func Create(job *Job) error {
+func Create(ctx *context.Context, job *Job) error {
 	jobId := bson.NewObjectId()
 	job.Id = jobId
 
-	err := db.DbAdapter.CreateJob(job)
+	err := db.DbAdapter.CreateJob(ctx, job)
 	for i := 0; i < 3; i++ {
 		if err == nil || err == ERR_DB_ERR {
 			return err
@@ -33,13 +34,17 @@ func Create(job *Job) error {
 		//Otherwise err is ERR_DB_IDX_DUP
 		jobId = bson.NewObjectId()
 		job.Id = jobId
-		err = db.DbAdapter.CreateJob(job)
+		err = db.DbAdapter.CreateJob(ctx, job)
 	}
 
 	log.Log("Add job failed, objectid duplicate too much times.")
 	return ERR_INNER_ERR
 }
 
-func Get(id string, tenant string) ([]Job, error) {
-	return db.DbAdapter.GetJob(id, tenant)
+func Get(ctx *context.Context, id string) (*Job, error) {
+	return db.DbAdapter.GetJob(ctx, id)
+}
+
+func List(ctx *context.Context) ([]Job, error) {
+	return db.DbAdapter.ListJob(ctx)
 }

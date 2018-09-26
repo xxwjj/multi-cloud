@@ -20,7 +20,8 @@ import (
 	"github.com/globalsign/mgo"
 	"github.com/globalsign/mgo/bson"
 	"github.com/micro/go-log"
-	. "github.com/opensds/multi-cloud/dataflow/pkg/type"
+	. "github.com/opensds/multi-cloud/api/pkg/Filters/context"
+	. "github.com/opensds/multi-cloud/dataflow/pkg/model"
 )
 
 var adap = &adapter{}
@@ -167,7 +168,8 @@ func (ad *adapter) UnlockSched(planId string) int {
 	return unlock(ss, planId)
 }
 
-func (ad *adapter) CreatePolicy(pol *Policy) error {
+func (ad *adapter) CreatePolicy(ctx *Context, pol *Policy) error {
+	pol.Tenant = ctx.TenantId
 	ss := ad.s.Copy()
 	defer ss.Close()
 	c := ss.DB(DataBaseName).C(CollPolicy)
@@ -180,7 +182,7 @@ func (ad *adapter) CreatePolicy(pol *Policy) error {
 	return nil
 }
 
-func (ad *adapter) DeletePolicy(id string, tenant string) error {
+func (ad *adapter) DeletePolicy(ctx *Context, id string) error {
 	//Check if the policy exist or not
 	ss := ad.s.Copy()
 	defer ss.Close()
@@ -200,7 +202,7 @@ func (ad *adapter) DeletePolicy(id string, tenant string) error {
 
 	po := Policy{}
 	c := ss.DB(DataBaseName).C(CollPolicy)
-	err := c.Find(bson.M{"_id": bson.ObjectIdHex(id), "tenant": tenant}).One(&po)
+	err := c.Find(bson.M{"_id": bson.ObjectIdHex(id), "tenant": ctx.TenantId}).One(&po)
 	if err == mgo.ErrNotFound {
 		log.Log("Delete policy: the specified policy does not exist.")
 		return ERR_POLICY_NOT_EXIST
@@ -231,42 +233,30 @@ func (ad *adapter) DeletePolicy(id string, tenant string) error {
 	return nil
 }
 
-func (ad *adapter) GetPolicy(name string, tenant string) ([]Policy, error) {
+func (ad *adapter) ListPolicy(ctx *Context) ([]Policy, error) {
 	//var query mgo.Query;
 	pols := []Policy{}
 	ss := ad.s.Copy()
 	defer ss.Close()
 	c := ss.DB(DataBaseName).C(CollPolicy)
-	if name == "all" { //get all policies
-		err := c.Find(bson.M{"tenant": tenant}).All(&pols)
-		if err == mgo.ErrNotFound || len(pols) == 0 {
-			log.Log("No policy found.")
-			return nil, nil
-		} else if err != nil {
-			log.Log("Get policy from database failed.")
-			return nil, ERR_DB_ERR
-		}
-	} else { //get specific policy
-		err := c.Find(bson.M{"name": name, "tenant": tenant}).All(&pols)
-		if err == mgo.ErrNotFound || len(pols) == 0 {
-			log.Log("Policy does not exist.")
-			return nil, ERR_POLICY_NOT_EXIST
-		} else if err != nil {
-			log.Log("Get policy from database failed.")
-			return nil, ERR_DB_ERR
-		}
+	err := c.Find(bson.M{"tenant": ctx.TenantId}).All(&pols)
+	if err == mgo.ErrNotFound || len(pols) == 0 {
+		log.Log("No policy found.")
+		return nil, nil
+	} else if err != nil {
+		log.Log("Get policy from database failed.")
+		return nil, ERR_DB_ERR
 	}
-
 	return pols, nil
 }
 
-func (ad *adapter) GetPolicyById(id string, tenant string) (*Policy, error) {
+func (ad *adapter) GetPolicy(ctx *Context, id string) (*Policy, error) {
 	pol := Policy{}
 	ss := ad.s.Copy()
 	defer ss.Close()
 	c := ss.DB(DataBaseName).C(CollPolicy)
-	log.Logf("GetPolicyById: id=%s,tenant=%s\n", id, tenant)
-	err := c.Find(bson.M{"_id": bson.ObjectIdHex(id), "tenant": tenant}).One(&pol)
+	log.Logf("GetPolicy: id=%s,tenant=%s\n", id, ctx.TenantId)
+	err := c.Find(bson.M{"_id": bson.ObjectIdHex(id), "tenant": ctx.TenantId}).One(&pol)
 	if err == mgo.ErrNotFound {
 		log.Log("Plan does not exist.")
 		return nil, ERR_POLICY_NOT_EXIST
@@ -275,7 +265,7 @@ func (ad *adapter) GetPolicyById(id string, tenant string) (*Policy, error) {
 	return &pol, nil
 }
 
-func (ad *adapter) UpdatePolicy(newPol *Policy) error {
+func (ad *adapter) UpdatePolicy(ctx *Context, newPol *Policy) error {
 	//Check if the policy exist or not
 	ss := ad.s.Copy()
 	defer ss.Close()
@@ -319,11 +309,11 @@ func (ad *adapter) UpdatePolicy(newPol *Policy) error {
 	return nil
 }
 
-func (ad *adapter) CreatePlan(plan *Plan) error {
+func (ad *adapter) CreatePlan(ctx *Context, plan *Plan) error {
+	plan.Tenant = ctx.TenantId
 	ss := ad.s.Copy()
 	defer ss.Close()
 	c := ss.DB(DataBaseName).C(CollPlan)
-
 	//Get Lock, Create plan may depended on policy or connector
 	ret := lock(ss, lockManager, maxLockSec)
 	for i := 0; i < 3 && ret != LockSuccess; i++ {
@@ -365,7 +355,7 @@ func (ad *adapter) CreatePlan(plan *Plan) error {
 	return nil
 }
 
-func (ad *adapter) DeletePlan(id string, tenant string) error {
+func (ad *adapter) DeletePlan(ctx *Context, id string) error {
 	//Check if the connctor exist or not
 	ss := ad.s.Copy()
 	defer ss.Close()
@@ -383,11 +373,11 @@ func (ad *adapter) DeletePlan(id string, tenant string) error {
 		return ERR_INNER_ERR
 	}
 
-	plan := Plan{}
+	p := Plan{}
 	c := ss.DB(DataBaseName).C(CollPlan)
-	err := c.Find(bson.M{"_id": bson.ObjectIdHex(id), "tenant": tenant}).One(&plan)
+	err := c.Find(bson.M{"_id": bson.ObjectIdHex(id), "tenant": ctx.TenantId}).One(&p)
 	if err == mgo.ErrNotFound {
-		log.Log("Delete plan failed, err:the specified plan does not exist.")
+		log.Log("Delete plan failed, err:the specified p does not exist.")
 		return ERR_PLAN_NOT_EXIST
 	} else if err != nil {
 		log.Logf("Delete plan failed, err:%v.\n", err)
@@ -395,9 +385,9 @@ func (ad *adapter) DeletePlan(id string, tenant string) error {
 	}
 
 	//Delete it from database
-	err = c.Remove(bson.M{"_id": plan.Id})
+	err = c.Remove(bson.M{"_id": p.Id})
 	if err == mgo.ErrNotFound {
-		log.Log("Delete plan failed, err:the specified plan does not exist.")
+		log.Log("Delete plan failed, err:the specified p does not exist.")
 		return ERR_PLAN_NOT_EXIST
 	} else if err != nil {
 		log.Logf("Delete plan from database failed,err:%v.\n", err)
@@ -422,7 +412,7 @@ func checkPlanRelateObj(ss *mgo.Session, plan *Plan) error {
 	return nil
 }
 
-func (ad *adapter) UpdatePlan(plan *Plan) error {
+func (ad *adapter) UpdatePlan(ctx *Context, plan *Plan) error {
 	//Check if the policy exist or not
 	ss := ad.s.Copy()
 	defer ss.Close()
@@ -459,31 +449,19 @@ func (ad *adapter) UpdatePlan(plan *Plan) error {
 	return nil
 }
 
-func (ad *adapter) GetPlan(name string, tenant string) ([]Plan, error) {
+func (ad *adapter) ListPlan(ctx *Context) ([]Plan, error) {
 	//var query mgo.Query;
 	plans := []Plan{}
 	ss := ad.s.Copy()
 	defer ss.Close()
 	c := ss.DB(DataBaseName).C(CollPlan)
-	log.Logf("name:%s, tenatn:%s\n", name, tenant)
-	if name == "all" { //get all Connectors
-		err := c.Find(bson.M{"tenant": tenant}).All(&plans)
-		if err == mgo.ErrNotFound || len(plans) == 0 {
-			log.Log("No plan found.")
-			return nil, nil
-		} else if err != nil {
-			log.Logf("Get plan from database failed,err:%v.\n", err)
-			return nil, ERR_DB_ERR
-		}
-	} else { //get specific Connector
-		err := c.Find(bson.M{"name": name, "tenant": tenant}).All(&plans)
-		if err == mgo.ErrNotFound || len(plans) == 0 {
-			log.Log("Plan does not exist.")
-			return nil, ERR_PLAN_NOT_EXIST
-		} else if err != nil {
-			log.Logf("Get plan from database failed,err:%v.", err)
-			return nil, ERR_DB_ERR
-		}
+	err := c.Find(bson.M{"tenant": ctx.TenantId}).All(&plans)
+	if err == mgo.ErrNotFound || len(plans) == 0 {
+		log.Log("No plan found.")
+		return nil, nil
+	} else if err != nil {
+		log.Logf("Get plan from database failed,err:%v.\n", err)
+		return nil, ERR_DB_ERR
 	}
 
 	//Get the name of related policy and connectors
@@ -505,13 +483,13 @@ func (ad *adapter) GetPlan(name string, tenant string) ([]Plan, error) {
 	return plans, nil
 }
 
-func (ad *adapter) GetPlanByid(id string, tenant string) (*Plan, error) {
-	plan := Plan{}
+func (ad *adapter) GetPlan(ctx *Context, id string) (*Plan, error) {
+	p := Plan{}
 	ss := ad.s.Copy()
 	defer ss.Close()
 	c := ss.DB(DataBaseName).C(CollPlan)
-	log.Logf("GetPlanByid: id=%s,tenant=%s\n", id, tenant)
-	err := c.Find(bson.M{"_id": bson.ObjectIdHex(id), "tenant": tenant}).One(&plan)
+	log.Logf("GetPlan: id=%s,tenant=%s\n", id, ctx.TenantId)
+	err := c.Find(bson.M{"_id": bson.ObjectIdHex(id), "tenant": ctx.TenantId}).One(&p)
 	if err == mgo.ErrNotFound {
 		log.Log("Plan does not exist.")
 		return nil, ERR_PLAN_NOT_EXIST
@@ -519,21 +497,22 @@ func (ad *adapter) GetPlanByid(id string, tenant string) (*Plan, error) {
 
 	//Get the name of related policy and connectors
 	var pol Policy
-	if plan.PolicyId != "" {
-		err := ss.DB(DataBaseName).FindRef(&plan.PolicyRef).One(&pol)
+	if p.PolicyId != "" {
+		err := ss.DB(DataBaseName).FindRef(&p.PolicyRef).One(&pol)
 		if err != nil {
 			log.Logf("Get PolicyRef failed,err:%v.\n", err)
 			return nil, ERR_DB_ERR
 		} else {
-			plan.PolicyName = pol.Name
+			p.PolicyName = pol.Name
 			//plans[i].PolicyId = string(pol.Id.Hex())
 		}
 	}
 
-	return &plan, nil
+	return &p, nil
 }
 
-func (ad *adapter) CreateJob(job *Job) error {
+func (ad *adapter) CreateJob(ctx *Context, job *Job) error {
+	job.Tenant = ctx.TenantId
 	ss := ad.s.Copy()
 	defer ss.Close()
 
@@ -561,30 +540,34 @@ func (ad *adapter) CreateJob(job *Job) error {
 	return ERR_DB_ERR
 }
 
-func (ad *adapter) GetJob(id string, tenant string) ([]Job, error) {
+func (ad *adapter) GetJob(ctx *Context, id string) (*Job, error) {
+	//var query mgo.Query;
+	job := Job{}
+	ss := ad.s.Copy()
+	defer ss.Close()
+	c := ss.DB(DataBaseName).C(CollJob)
+
+	err := c.Find(bson.M{"_id": bson.ObjectIdHex(id), "tenant": ctx.TenantId}).One(&job)
+	if err == mgo.ErrNotFound {
+		log.Log("Plan does not exist.")
+		return nil, ERR_JOB_NOT_EXIST
+	}
+	return &job, nil
+}
+
+func (ad *adapter) ListJob(ctx *Context) ([]Job, error) {
 	//var query mgo.Query;
 	jobs := []Job{}
 	ss := ad.s.Copy()
 	defer ss.Close()
 	c := ss.DB(DataBaseName).C(CollJob)
-	if id == "" { //get all Connectors
-		err := c.Find(bson.M{"tenant": tenant}).All(&jobs)
-		if err == mgo.ErrNotFound || len(jobs) == 0 {
-			log.Log("No connector found.")
-			return nil, nil
-		} else if err != nil {
-			log.Logf("Get connector from database failed,err:%v.\n", err)
-			return nil, ERR_DB_ERR
-		}
-	} else { //get specific Connector
-		err := c.Find(bson.M{"_id": bson.ObjectIdHex(id), "tenant": tenant}).All(&jobs)
-		if err == mgo.ErrNotFound || len(jobs) == 0 {
-			log.Log("Connector not found.")
-			return nil, ERR_JOB_NOT_EXIST
-		} else if err != nil {
-			log.Log("Get connector from database failed.")
-			return nil, ERR_DB_ERR
-		}
+	err := c.Find(bson.M{"tenant": ctx.TenantId}).All(&jobs)
+	if err == mgo.ErrNotFound || len(jobs) == 0 {
+		log.Log("No connector found.")
+		return nil, nil
+	} else if err != nil {
+		log.Logf("Get connector from database failed,err:%v.\n", err)
+		return nil, ERR_DB_ERR
 	}
 	return jobs, nil
 }
