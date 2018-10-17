@@ -192,15 +192,23 @@ func (ad *AwsAdapter) UPLOADPART(stream io.Reader, multipartUpload *pb.Multipart
 		UploadId:      &multipartUpload.UploadId,
 		ContentLength: aws.Int64(upBytes),
 	}
+
+	//listPartInput := &awss3.ListMultipartUploadsInput{
+	//	//Bucket:         &bucket,
+	//	//KeyMarker:      &newObjectKey,
+	//	//UploadIdMarker: &multipartUpload.UploadId,
+	//}
+	//resp, err := ad.svc.ListMultipartUploads(nil)
+	//log.Logf("list resp:%v, err:%v", resp, err)
 	for tries <= 3 {
 		ad.svc = awss3.New(ad.session)
 		upRes, err := ad.svc.UploadPart(upPartInput)
 		if err != nil {
 			if tries == 3 {
-				log.Fatalf("Upload part to aws failed. err:%v\n", err)
-				return nil, S3Error{Code: 500, Description: "Download failed"}
+				log.Logf("[ERROR]Upload part to aws failed. err:%v\n", err)
+				return nil, S3Error{Code: 500, Description: "Upload failed"}
 			}
-			log.Logf("Retrying to upload part#%d\n", partNumber)
+			log.Logf("Retrying to upload part#%d ,err:%s\n", partNumber, err)
 			tries++
 		} else {
 			log.Logf("Uploaded part #%d\n", partNumber)
